@@ -4,6 +4,7 @@ import numpy as np
 import tensorflow as tf
 
 import data_util
+import logging
 
 emb_init = tf.truncated_normal_initializer(mean=0.0, stddev=0.01)
 fc_layer = tf.contrib.layers.fully_connected
@@ -23,6 +24,8 @@ class BiGRUModel(object):
                  forward_only=False,
                  dtype=tf.float32):
 
+        logging.info(" BiGRUModel - initialzer: " + tf.__version__)
+
         self.source_vocab_size = source_vocab_size
         self.target_vocab_size = target_vocab_size
         self.buckets = buckets
@@ -31,18 +34,19 @@ class BiGRUModel(object):
         self.global_step = tf.Variable(0, trainable=False, name="global_step")
         self.state_size = state_size
 
-        self.encoder_inputs = tf.placeholder(
-            tf.int32, shape=[self.batch_size, None])
-        self.decoder_inputs = tf.placeholder(
-            tf.int32, shape=[self.batch_size, None])
-        self.decoder_targets = tf.placeholder(
-            tf.int32, shape=[self.batch_size, None])
-        self.encoder_len = tf.placeholder(tf.int32, shape=[self.batch_size])
-        self.decoder_len = tf.placeholder(tf.int32, shape=[self.batch_size])
-        self.beam_tok = tf.placeholder(tf.int32, shape=[self.batch_size])
-        self.prev_att = tf.placeholder(
-            tf.float32, shape=[self.batch_size, state_size * 2])
+        self.encoder_inputs = tf.placeholder(tf.int32, shape=[self.batch_size, None], name='encoder_inputs')
+        self.decoder_inputs = tf.placeholder(tf.int32, shape=[self.batch_size, None], name='decoder_inputs')
+        self.decoder_targets = tf.placeholder(tf.int32, shape=[self.batch_size, None], name='decoder_targets')
 
+        self.encoder_len = tf.placeholder(tf.int32, shape=[self.batch_size], name='encoder_length')
+        self.decoder_len = tf.placeholder(tf.int32, shape=[self.batch_size], name='decoder_length')
+
+        self.beam_tok = tf.placeholder(tf.int32, shape=[self.batch_size])
+        self.prev_att = tf.placeholder(tf.float32, shape=[self.batch_size, state_size * 2])
+
+        # the rnn cell for encoder and decoder (next step of embedding layer actually)
+        
+        logging.info(tf.__version__)
         encoder_fw_cell = tf.contrib.rnn.GRUCell(state_size)
         encoder_bw_cell = tf.contrib.rnn.GRUCell(state_size)
         decoder_cell = tf.contrib.rnn.GRUCell(state_size)
@@ -55,7 +59,7 @@ class BiGRUModel(object):
             decoder_cell = tf.contrib.rnn.DropoutWrapper(
                 decoder_cell, output_keep_prob=0.50)
 
-
+        # embedding layers
         with tf.variable_scope("seq2seq", dtype=dtype):
             with tf.variable_scope("encoder"):
 
@@ -72,25 +76,62 @@ class BiGRUModel(object):
                         sequence_length=self.encoder_len, dtype=dtype)
 
             with tf.variable_scope("init_state"):
-                init_state = fc_layer(
-                    tf.concat(encoder_states, 1), state_size)
+                init_state = fc_layer(tf.concat(values=encoder_states, axis=1), state_size)
+                # for each data in batch: concate its output_state_fw and output_state_bw
+                # after concatenation: shape = [batch_size, 2 * state_size]
+                # then use a fc_layer to project this bi-directional-state to a tensor with half size
+                # i.e. [self.batch_size, state_size]
+
                 # the shape of bidirectional_dynamic_rnn is weird
                 # None for batch_size
                 self.init_state = init_state
                 self.init_state.set_shape([self.batch_size, state_size])
+                # assert the static shape for init_state, nothing about the tensor itself changed
+
                 self.att_states = tf.concat(encoder_outputs, 2)
-                self.att_states.set_shape([self.batch_size, None, state_size*2])
+                # same concat principle with encoder_states, just without projection
+                self.att_states.set_shape([self.batch_size, None, state_size * 2])    # None: for timestep
 
             with tf.variable_scope("attention"):
+                # first step: define an attention 'mechanism' --
                 attention = tf.contrib.seq2seq.BahdanauAttention(
-                    state_size, self.att_states, self.encoder_len)
-                decoder_cell = tf.contrib.seq2seq.DynamicAttentionWrapper(
-                    decoder_cell, attention, state_size * 2)
-                wrapper_state = tf.contrib.seq2seq.DynamicAttentionWrapperState(
-                    self.init_state, self.prev_att)
+                    num_units=state_size,   # the depth for the query
+                    memory=self.att_states, # with shape [batch_size, memory_max_time, memory_depth]
+                    memory_sequence_length=self.encoder_len)
+                # return alignment with shape: [batch_size, alignments_size]
+                # p.s: since 'BahdanauAttention' is using additive attention, it should be find for query and key/value
+                # to have different dimension (say here: len(query) = state_size, len(key) = 2 * state_size
+                '''
+                exactly! look at this: 
+                Attention mechanisms also have a concept of depth, usually determined as a construction parameter 
+                num_units. For some kinds of attention (like BahdanauAttention), both queries and memory are projected 
+                to tensors of depth num_units. For other kinds (like LuongAttention), num_units should match the depth 
+                of the queries; and the memory tensor will be projected to this depth.
+                <from: https://www.tensorflow.org/api_guides/python/contrib.seq2seq#Attention> 
+                '''
+
+                decoder_cell = tf.contrib.seq2seq.AttentionWrapper(
+                    cell=decoder_cell,
+                    attention_mechanism=attention,
+                    attention_layer_size=state_size * 2  # maybe: len(context) + len(cell_output)
+                )
+
+                # preparing initial state for decoder
+                wrapper_state = decoder_cell.zero_state(self.batch_size, dtype=dtype)   # updated version
+                wrapper_state = wrapper_state.clone(cell_state=self.init_state)
+                # clone the state with overriding the state to be self.init_state, shape = [batch_size, state_size]
+
+                '''
+                wrapper_state = tf.contrib.seq2seq.AttentionWrapperState(
+                    cell_state=self.init_state,
+                    attention=self.prev_att,
+                    attention_state=self.att_states,
+                    time=0, alignments=None, alignment_history=(),
+                )
+                '''
 
             with tf.variable_scope("decoder") as scope:
-
+                # construct a different embedding for dec
                 decoder_emb = tf.get_variable(
                     "embedding", [target_vocab_size, embedding_size],
                     initializer=emb_init)
@@ -104,11 +145,13 @@ class BiGRUModel(object):
 
                     helper = tf.contrib.seq2seq.TrainingHelper(
                         decoder_inputs_emb, self.decoder_len)
+
                     decoder = tf.contrib.seq2seq.BasicDecoder(
                         decoder_cell, helper, wrapper_state)
 
-                    outputs, final_state = \
+                    outputs, final_state, _ = \
                         tf.contrib.seq2seq.dynamic_decode(decoder)
+                    # _ for final sequence length
 
                     outputs_logits = outputs[0]
                     self.outputs = outputs_logits
@@ -148,8 +191,9 @@ class BiGRUModel(object):
                     decoder = tf.contrib.seq2seq.BasicDecoder(
                         decoder_cell, helper, wrapper_state)
 
-                    outputs, final_state = \
+                    outputs, final_state, _ = \
                         tf.contrib.seq2seq.dynamic_decode(decoder)
+                    # _ for final sequence length
 
                     self.outputs = outputs[0]
 

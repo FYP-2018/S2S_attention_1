@@ -60,7 +60,8 @@ def create_dict(dict_path, corpus, max_vocab=None):
     id2tok = dict()
     with open(dict_path, 'w') as dict_file:
         for idx, tok in enumerate(words):
-            print(idx, tok, file=dict_file)
+            # print(idx, tok, file=dict_file)
+            print(idx, tok)
             tok2id[tok] = idx
             id2tok[idx] = tok
 
@@ -119,11 +120,9 @@ def load_data(doc_filename,
         sum_dict = create_dict(sum_dict_path, sums, max_sum_vocab)
 
     docid, cover = corpus_map2id(docs, doc_dict[0])
-    logging.info(
-        "Doc dict covers {:.2f}% words.".format(cover * 100))
+    logging.info("Doc dict covers {:.2f}% words.".format(cover * 100))
     sumid, cover = corpus_map2id(sums, sum_dict[0])
-    logging.info(
-        "Sum dict covers {:.2f}% words.".format(cover * 100))
+    logging.info("Sum dict covers {:.2f}% words.".format(cover * 100))
 
     return docid, sumid, doc_dict, sum_dict
 
@@ -196,20 +195,30 @@ if __name__ == "__main__":
         30000, 30000)
 
     checkid = np.random.randint(len(docid))
-    print(checkid)
-    print(docid[checkid], sen_map2tok(docid[checkid], doc_dict[1]))
-    print(sumid[checkid], sen_map2tok(sumid[checkid], sum_dict[1]))
+    # print(checkid)
+    # print(docid[checkid], sen_map2tok(docid[checkid], doc_dict[1]))
+    # print(sumid[checkid], sen_map2tok(sumid[checkid], sum_dict[1]))
+    print checkid
+    print docid[checkid], sen_map2tok(docid[checkid], doc_dict[1])
+    print sumid[checkid], sen_map2tok(sumid[checkid], sum_dict[1])
 
     docid, sumid = load_valid_data(
         "data/valid.article.filter.txt", "data/valid.title.filter.txt",
         doc_dict, sum_dict)
 
     checkid = np.random.randint(len(docid))
-    print(checkid)
-    print(docid[checkid], sen_map2tok(docid[checkid], doc_dict[1]))
-    print(sumid[checkid], sen_map2tok(sumid[checkid], sum_dict[1]))
+    # print(checkid)
+    # print(docid[checkid], sen_map2tok(docid[checkid], doc_dict[1]))
+    # print(sumid[checkid], sen_map2tok(sumid[checkid], sum_dict[1]))
+
+    print checkid
+    print docid[checkid], sen_map2tok(docid[checkid], doc_dict[1])
+    print sumid[checkid], sen_map2tok(sumid[checkid], sum_dict[1])
 
     docid = load_test_data("data/test.giga.txt", doc_dict)
     checkid = np.random.randint(len(docid))
-    print(checkid)
-    print(docid[checkid], sen_map2tok(docid[checkid], doc_dict[1]))
+    # print(checkid)
+    # print(docid[checkid], sen_map2tok(docid[checkid], doc_dict[1]))
+
+    print checkid
+    print docid[checkid], sen_map2tok(docid[checkid], doc_dict[1])

@@ -43,6 +43,7 @@ if __name__ == "__main__":
     models = sorted(models, key = lambda x: int(x[1]), reverse=True)
     models = models[:MAX_KEEP]
     print(models)
+    # print models
 
     for model in models:
         ckpt = model_pattern.format(model[0], model[1])
@@ -51,12 +52,13 @@ if __name__ == "__main__":
             for beam_search in beam_searchs:
                 logging.info("Test {} with beam_size = {}".format(
                     data_pattern.format(dataset), beam_search))
+
                 output_file = OUTPUT_PATTERN.format(dataset=dataset,
                     description=str(beam_search)+"_"+str(model[1]))
                 if os.path.exists(output_file):
                     logging.info("{} exists, skip testing".format(output_file))
                     continue
-                proc = ["python3", "src/summarization.py",
+                proc = ["python", "src/summarization.py",
                         "--test_file", data_pattern.format(dataset),
                         "--batch_size", str(beam_search),
                         "--test_output", output_file,

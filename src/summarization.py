@@ -48,6 +48,9 @@ _buckets = [(30, 10), (50, 20), (70, 20), (100, 20), (200, 30)]
 
 
 def create_bucket(source, target):
+    """given n = len(_buckets), this function generate a list of training dataset with length = n
+    each entry in the list = a training set with different restriction text length"""
+    
     data_set = [[] for _ in _buckets]
     for s, t in zip(source, target):
         t = [data_util.ID_GO] + t + [data_util.ID_EOS]
@@ -73,12 +76,14 @@ def create_model(session, forward_only):
         FLAGS.learning_rate,
         forward_only=forward_only,
         dtype=dtype)
+
     if FLAGS.checkpoint != "":
         ckpt = FLAGS.checkpoint
     else:
         ckpt = tf.train.get_checkpoint_state(FLAGS.train_dir)
         if ckpt:
             ckpt = ckpt.model_checkpoint_path
+
     if ckpt and tf.train.checkpoint_exists(ckpt):
         logging.info("Reading model parameters from %s" % ckpt)
         model.saver.restore(session, ckpt)
@@ -90,6 +95,15 @@ def create_model(session, forward_only):
 
 def train():
     logging.info("Preparing summarization data.")
+
+
+    ############################################################
+    # move the following data-loading procedure to train.py
+    # so that dont need to load data for every training epoch
+    # @Crystina
+    ############################################################
+
+
     docid, sumid, doc_dict, sum_dict = \
         data_util.load_data(
             FLAGS.data_dir + "/train.article.txt",
@@ -108,7 +122,9 @@ def train():
         # Create model.
         logging.info("Creating %d layers of %d units." %
                      (FLAGS.num_layers, FLAGS.size))
-        train_writer = tf.summary.FileWriter(FLAGS.tfboard, sess.graph)
+        train_writer = tf.summary.FileWriter(FLAGS.tfboard, sess.graph)   # probably depreciateed
+        # train_writer = tf.contrib.summary.SummaryWriter(FLAGS.tfboard, sess.graph)   # probably depreciateed
+        # train_writer = tf.summary.SummaryWriter(FLAGS.tfboard, sess.graph)  # https://stackoverflow.com/questions/43304270/attributeerror-module-tensorflow-python-summary-summary-has-no-attribute-fil
         model = create_model(sess, False)
 
         # Read data into buckets and compute their sizes.
@@ -221,8 +237,12 @@ def decode():
             result.append(gen_sum)
             logging.info("Finish {} samples. :: {}".format(idx, gen_sum[:75]))
         with open(FLAGS.test_output, "w") as f:
+            print("writing to output file: ")
+            # print "writing to output file: "
+
             for item in result:
-                print(item, file=f)
+                # print(item, file=f)
+                print item
 
 def main(_):
     if FLAGS.decode:
